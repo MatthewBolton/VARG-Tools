@@ -1,10 +1,10 @@
 ﻿{
     "app_version":  "0.9.8",
-    "created_utc":  "2026-08-11T01:44:49Z",
+    "created_utc":  "2026-08-11T02:10:51Z",
     "export_method":  "explicit release payload from runtime-files.txt plus release support files",
     "upstream_source":  "VARGtools_Copy",
     "upstream_git_commit":  "5e519ff18217301c2c56cb13e8903e728b628d10",
     "upstream_worktree_dirty":  true,
-    "source_manifest_sha256":  "10c00956ff85f600ac228361493e2db09ef7f47e32191d6412f6ace564c93c5c",
+    "source_manifest_sha256":  "388f936578458457509aa23dad89e42ec9efbf1d021a803d731d930496e88b58",
     "source_file_count":  50
 }

@@ -16,20 +16,10 @@ permissions:
   contents: read
 
 jobs:
-  clean-windows:
+  isolated-windows:
     runs-on: windows-2022
     timeout-minutes: 30
     steps:
-      - name: Confirm no system R is available
-        shell: powershell
-        run: |
-          $commands = @(Get-Command R, Rscript -ErrorAction SilentlyContinue)
-          if ($commands.Count -gt 0) {
-            $commands | Format-List Name, Source
-            throw "The runner exposes a system R installation; this is not a clean-machine test."
-          }
-          Write-Output "clean_runner_no_system_r"
-
       - name: Download standalone archive and checksum
         shell: powershell
         env:
@@ -66,6 +56,24 @@ jobs:
           if (-not (Test-Path $rscript) -or -not (Test-Path $launcher)) {
             throw "Embedded R or VARG-Tools launcher is missing."
           }
+
+          $hostR = @(Get-Command R.exe, Rscript.exe -CommandType Application -ErrorAction SilentlyContinue)
+          if ($hostR.Count -gt 0) {
+            Write-Output "Host R installations detected and excluded from the test:"
+            $hostR | Format-List Name, Source
+          }
+
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          $env:R_HOME = ''
+          $env:R_LIBS = ''
+          $env:R_LIBS_SITE = ''
+          $env:R_LIBS_USER = ''
+          $visibleHostR = @(Get-Command R.exe, Rscript.exe -CommandType Application -ErrorAction SilentlyContinue)
+          if ($visibleHostR.Count -gt 0) {
+            $visibleHostR | Format-List Name, Source
+            throw "A host R executable remains visible after environment isolation."
+          }
+          Write-Output "host_r_hidden_ok"
 
           $env:R_HOME = $runtime
           $env:R_LIBS = ''
@@ -110,7 +118,7 @@ jobs:
             if (-not $ready) {
               throw "Embedded-R app did not return HTTP 200.`n$(Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Select-Object -Last 100)"
             }
-            Write-Output "clean_windows_standalone_http_ok port=$port"
+            Write-Output "isolated_windows_standalone_http_ok port=$port"
           } finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }

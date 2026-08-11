@@ -30,7 +30,7 @@ Versioned local downloads are distributed through the project portal and the [Gi
 - **Windows standalone:** includes its own private R 4.4.2 runtime and package library. Users extract the ZIP and run `Launch VARG-Tools.cmd`; no R or RStudio installation is required.
 - **R-user bundle:** requires R 4.4 or newer; RStudio is optional. Users run `Install Dependencies.cmd` once on Windows (or `Rscript app/install_dependencies.R` on any supported platform), then launch with `Run VARG-Tools.cmd` or `Rscript app/run_vargtools.R`.
 
-Both local distributions bind only to `127.0.0.1`, process uploaded data on the local computer, and keep their R package libraries isolated from the user's global library.
+Both local distributions bind only to `127.0.0.1` and process uploaded data on the local computer. The Windows standalone uses only its bundled R runtime and package library. The R-user launcher places its bundle-local library first while retaining base, recommended, and existing compatible R libraries as fallbacks.
 
 The curated application source is available at <https://github.com/MatthewBolton/VARG-Tools>. Scientific outputs remain conditional on the input data and user decisions and should be checked before interpretation.
 
