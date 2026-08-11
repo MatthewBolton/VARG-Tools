@@ -4357,31 +4357,47 @@ mod_visualization_server <- function(id, processed_data = NULL, global_rv = NULL
       }
     }
 
+    # Plotly registers each click stream when its plot is first rendered. Read
+    # only from the visible plot while Quick Tie mode is active so registration
+    # always precedes the event-data listener.
+    sc_initial_click <- reactive({
+      req(rv$sc_data, rv$sc_column_mappings, rv$sc_click_mode != "none")
+      req(identical(input$sc_plot_tabs, "Initial Alignment"))
+      event_data("plotly_click", source = "sc_initial", priority = "event")
+    })
+    sc_affine_click <- reactive({
+      req(rv$sc_data, rv$sc_column_mappings, rv$sc_click_mode != "none")
+      req(identical(input$sc_plot_tabs, "Affine Preview"))
+      event_data("plotly_click", source = "sc_affine", priority = "event")
+    })
+    sc_warped_click <- reactive({
+      req(rv$sc_warped_data, rv$sc_click_mode != "none")
+      req(identical(input$sc_plot_tabs, "Warped Alignment"))
+      event_data("plotly_click", source = "sc_warped", priority = "event")
+    })
+
     # Handle plot clicks from Initial Alignment plot
-    observeEvent(event_data("plotly_click", source = "sc_initial", priority = "event"),
+    observeEvent(sc_initial_click(),
       {
-        click <- event_data("plotly_click", source = "sc_initial", priority = "event")
-        handle_plot_click(click)
+        handle_plot_click(sc_initial_click())
       },
       ignoreNULL = TRUE,
       ignoreInit = TRUE
     )
 
     # Affine-preview clicks resolve through sample keys to original uploaded depths.
-    observeEvent(event_data("plotly_click", source = "sc_affine", priority = "event"),
+    observeEvent(sc_affine_click(),
       {
-        click <- event_data("plotly_click", source = "sc_affine", priority = "event")
-        handle_plot_click(click)
+        handle_plot_click(sc_affine_click())
       },
       ignoreNULL = TRUE,
       ignoreInit = TRUE
     )
 
     # Handle plot clicks from Warped Alignment plot
-    observeEvent(event_data("plotly_click", source = "sc_warped", priority = "event"),
+    observeEvent(sc_warped_click(),
       {
-        click <- event_data("plotly_click", source = "sc_warped", priority = "event")
-        handle_plot_click(click)
+        handle_plot_click(sc_warped_click())
       },
       ignoreNULL = TRUE,
       ignoreInit = TRUE

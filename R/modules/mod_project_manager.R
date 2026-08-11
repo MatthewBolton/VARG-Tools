@@ -1,6 +1,56 @@
 # R/modules/mod_project_manager.R
 # Failure-atomic project save/load with versioned UMAP model persistence.
 
+varg_normalize_project_pop_styles <- function(styles) {
+    if (is.null(styles)) {
+        return(list(ok = TRUE, styles = NULL, migrated = FALSE, errors = character(0)))
+    }
+    if (!is.list(styles) || is.null(names(styles))) {
+        return(list(
+            ok = FALSE,
+            styles = NULL,
+            migrated = FALSE,
+            errors = "Project population-style metadata is invalid."
+        ))
+    }
+
+    current_fields <- c("cp_group_color_overrides", "cp_group_shape_overrides")
+    legacy_fields <- c("colors", "shapes")
+    style_names <- names(styles)
+
+    if (all(current_fields %in% style_names)) {
+        normalized <- list(
+            cp_group_color_overrides = styles[["cp_group_color_overrides"]],
+            cp_group_shape_overrides = styles[["cp_group_shape_overrides"]],
+            cp_current_palette = styles[["cp_current_palette"]]
+        )
+        return(list(ok = TRUE, styles = normalized, migrated = FALSE, errors = character(0)))
+    }
+
+    if (all(legacy_fields %in% style_names)) {
+        palette <- if ("cp_current_palette" %in% style_names) {
+            styles[["cp_current_palette"]]
+        } else if ("palette" %in% style_names) {
+            styles[["palette"]]
+        } else {
+            NULL
+        }
+        normalized <- list(
+            cp_group_color_overrides = styles[["colors"]],
+            cp_group_shape_overrides = styles[["shapes"]],
+            cp_current_palette = palette
+        )
+        return(list(ok = TRUE, styles = normalized, migrated = TRUE, errors = character(0)))
+    }
+
+    list(
+        ok = FALSE,
+        styles = NULL,
+        migrated = FALSE,
+        errors = "Project population-style metadata is invalid."
+    )
+}
+
 varg_validate_project_payload <- function(payload) {
     errors <- character(0)
     if (!is.list(payload)) {
@@ -16,10 +66,8 @@ varg_validate_project_payload <- function(payload) {
         }
     }
     if (!is.null(payload$pop_styles)) {
-        styles <- payload$pop_styles
-        if (!is.list(styles) || is.null(styles$colors) || is.null(styles$shapes)) {
-            errors <- c(errors, "Project population-style metadata is invalid.")
-        }
+        style_result <- varg_normalize_project_pop_styles(payload$pop_styles)
+        if (!style_result$ok) errors <- c(errors, style_result$errors)
     }
 
     has_user_umap <- isTRUE(payload$has_user_umap)
@@ -112,7 +160,11 @@ mod_project_manager_server <- function(id, global_rv, pop_styles = NULL) {
                         app_version = APP_VERSION
                     )
                 )
-                if (!is.null(pop_styles)) save_list$pop_styles <- isolate(pop_styles())
+                if (!is.null(pop_styles)) {
+                    style_result <- varg_normalize_project_pop_styles(isolate(pop_styles()))
+                    if (!style_result$ok) stop(paste(style_result$errors, collapse = "\n"))
+                    save_list$pop_styles <- style_result$styles
+                }
 
                 validation <- varg_validate_project_payload(save_list)
                 if (!validation$ok) stop(paste(validation$errors, collapse = "\n"))
@@ -188,6 +240,7 @@ mod_project_manager_server <- function(id, global_rv, pop_styles = NULL) {
             candidate <- readRDS(project_rds)
             validation <- varg_validate_project_payload(candidate)
             if (!validation$ok) stop(paste(validation$errors, collapse = "\n"))
+            candidate$pop_styles <- varg_normalize_project_pop_styles(candidate$pop_styles)$styles
 
             if (is.null(candidate$original_cols)) candidate$original_cols <- names(candidate$data)
             if (is.null(candidate$data_stale)) candidate$data_stale <- FALSE
@@ -222,6 +275,7 @@ mod_project_manager_server <- function(id, global_rv, pop_styles = NULL) {
             )
             validation <- varg_validate_project_payload(candidate)
             if (!validation$ok) stop(paste(validation$errors, collapse = "\n"))
+            candidate$pop_styles <- varg_normalize_project_pop_styles(candidate$pop_styles)$styles
             list(candidate = candidate, models = NULL, retained_dir = NULL, cleanup_dir = NULL)
         }
 

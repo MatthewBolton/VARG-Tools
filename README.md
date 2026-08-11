@@ -32,6 +32,8 @@ Versioned local downloads are distributed through the project portal and the [Gi
 
 Both local distributions bind only to `127.0.0.1` and process uploaded data on the local computer. The Windows standalone uses only its bundled R runtime and package library. The R-user launcher places its bundle-local library first while retaining base, recommended, and existing compatible R libraries as fallbacks.
 
+On first launch, Windows Defender Firewall may ask whether the bundled R executable can communicate on a network. Leave **Public networks** unchecked. Allowing **Private networks** is sufficient if Windows requires a selection; VARG-Tools listens only on `127.0.0.1` and does not accept connections from other computers.
+
 The curated application source is available at <https://github.com/MatthewBolton/VARG-Tools>. Scientific outputs remain conditional on the input data and user decisions and should be checked before interpretation.
 
 ## Documentation

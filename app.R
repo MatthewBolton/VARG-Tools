@@ -1,4 +1,6 @@
 # app.R
+source("R/utils/package_compatibility.R")
+varg_assert_package_compatibility()
 source("global.R")
 source("R/utils/tooltip_helpers.R")
 source("R/utils/utils_ui.R")

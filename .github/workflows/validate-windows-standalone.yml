@@ -98,6 +98,20 @@ jobs:
             throw "Embedded-R static smoke failed:`n$($static -join "`n")"
           }
 
+          $compatScript = Join-Path $bundle.FullName 'app\tests\scripts\test_ggplotly_compat.R'
+          $compat = & $rscript $compatScript 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($compat -join "`n") -notmatch 'ggplotly_compat_ok') {
+            throw "Embedded-R ggplotly compatibility smoke failed:`n$($compat -join "`n")"
+          }
+          Write-Output ($compat -join "`n")
+
+          $rendererScript = Join-Path $bundle.FullName 'app\tests\scripts\test_processing_plotly_renderers.R'
+          $renderer = & $rscript $rendererScript (Join-Path $bundle.FullName 'app') 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($renderer -join "`n") -notmatch 'processing_plotly_renderers_ok') {
+            throw "Embedded-R Processing renderer smoke failed:`n$($renderer -join "`n")"
+          }
+          Write-Output 'processing_plotly_renderers_ok'
+
           $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
