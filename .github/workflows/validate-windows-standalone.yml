@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Download standalone archive and checksum
-        shell: powershell
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -39,14 +39,17 @@ jobs:
           Write-Output "standalone_checksum_ok=$actual"
 
       - name: Extract and test embedded R only
-        shell: powershell
+        shell: pwsh
         env:
           ASSET_NAME: ${{ inputs.asset_name }}
         run: |
           $ErrorActionPreference = 'Stop'
           $download = Join-Path $env:RUNNER_TEMP 'vargtools-download'
           $extract = Join-Path $env:RUNNER_TEMP 'VARG Tools clean test'
-          Expand-Archive -LiteralPath (Join-Path $download $env:ASSET_NAME) -DestinationPath $extract
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+          & $tar -xf (Join-Path $download $env:ASSET_NAME) -C $extract
+          if ($LASTEXITCODE -ne 0) { throw "Standalone archive extraction failed." }
           $bundle = Get-ChildItem $extract -Directory | Select-Object -First 1
           if (-not $bundle) { throw "Standalone bundle root was not found." }
 
@@ -86,8 +89,12 @@ jobs:
           $env:VARG_BG_PROCESSES = 'false'
           $env:VARG_SMOKE_TEST = 'true'
 
+          $previousErrorAction = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
           $static = & $rscript $launcher 2>&1
-          if ($LASTEXITCODE -ne 0 -or ($static -join "`n") -notmatch 'vargtools_smoke_check_ok') {
+          $staticExitCode = $LASTEXITCODE
+          $ErrorActionPreference = $previousErrorAction
+          if ($staticExitCode -ne 0 -or ($static -join "`n") -notmatch 'vargtools_smoke_check_ok') {
             throw "Embedded-R static smoke failed:`n$($static -join "`n")"
           }
 
