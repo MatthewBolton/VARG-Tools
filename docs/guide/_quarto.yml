@@ -1,0 +1,61 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "VARG-Tools User Guide"
+  description: "Task-based guidance for processing tephra geochemistry, comparing records, and generating chronology models."
+  navbar:
+    title: "VARG-Tools Guide"
+    left:
+      - text: "Start"
+        href: index.qmd
+      - text: "First Run"
+        href: getting-started.qmd
+      - text: "Processing"
+        href: processing.qmd
+      - text: "Visualization"
+        href: visualization.qmd
+      - text: "Chronology"
+        href: chronology.qmd
+      - text: "Help"
+        menu:
+          - text: "Practice Data"
+            href: walkthrough.qmd
+          - text: "Troubleshooting"
+            href: troubleshooting.qmd
+          - text: "Reference"
+            href: reference.qmd
+    right:
+      - text: "Project site"
+        icon: globe
+        href: https://matthewbolton.github.io/VARG_Tools/
+
+  sidebar:
+    style: docked
+    search: true
+    contents:
+      - index.qmd
+      - getting-started.qmd
+      - walkthrough.qmd
+      - processing.qmd
+      - visualization.qmd
+      - chronology.qmd
+      - troubleshooting.qmd
+      - reference.qmd
+
+  page-footer:
+    left: "VARG-Tools (c) 2026 Bolton and Jensen"
+    right: "Built with Quarto"
+
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    toc: true
+    toc-depth: 2
+    toc-expand: 1
+    number-sections: false
+    code-copy: true
+    css: styles.css

@@ -1,0 +1,71 @@
+---
+title: "Reference"
+---
+
+This page collects settings and file behaviour that are useful after the main workflows are understood.
+
+## Common advanced settings
+
+| Setting | Default | Change it when... |
+|:--|:--|:--|
+| GMM **Detect Outliers** | On | You need a comparison in which every point is assigned to a fitted group. |
+| GMM **Stabilize Estimation** | Off | Covariance fits fail or BIC traces are incomplete. |
+| Custom UMAP neighbours | 15 | The scientific question requires more local or more regional neighbourhood emphasis. |
+| Custom UMAP minimum distance | 0.1 | Point packing obscures or exaggerates local structure. |
+| VP Finder neighbours (`k`) | 3 | You are testing sensitivity to finer or smoother classification boundaries. |
+| HDR Envelope Size | Varies by source | You need a tighter core or more inclusive reference-density region. |
+| KDE Smoothness | 1.0 | Fields are fragmented or merge features excessively. |
+| Stratigraphic plot height | 1x | A long record needs 1.5x or 2x vertical space for inspection. |
+| Chronology interpolation rate | Automatic | Date density or the desired reporting depths make the automatic value unsuitable. |
+
+Changing a default changes the analysis. Record consequential settings with exported results.
+
+## Generated columns
+
+| Pattern | Meaning |
+|:--|:--|
+| `*_norm` | Row-normalized compositional value |
+| `*_imp` | Value after compositional imputation |
+| `pivot_*` | ILR pivot coordinate |
+| `clr_*` | Centred log-ratio coordinate |
+| `gmm_cluster` | Fitted GMM assignment; `0` can represent noise when enabled |
+| `gmm_prob_*`, uncertainty | Optional membership diagnostics |
+| `UMAP_VARG26_1D` | Fixed one-dimensional VARG26 coordinate |
+| `UMAP_VARG26_2D_1`, `UMAP_VARG26_2D_2` | Fixed two-dimensional VARG26 coordinates |
+| `population` | User-assigned interpretive label |
+
+The XLSX Processing export includes a column dictionary for the exact file.
+
+## Project state
+
+A `.varg` file is a zip bundle containing `project.rds` and, where applicable, saved custom UMAP model files. Current bundles can preserve core Processing data and settings, GMM results, UMAP mode and training contract, source-file metadata, and population styles.
+
+Visualization and Chronology controls are cleared when a project is loaded. A `.varg` bundle is therefore a convenience for resuming supported app state, not a complete reproducibility archive. Keep source files, exports, tie tables, OxCal code, and final outputs together.
+
+## Method notes
+
+- **Imputation:** `robCompositions::impCoda()` with regression-based methods selected by the current workflow. Zeros are treated as missing for this operation, and difficult fits can trigger a documented fallback.
+- **ILR:** `robCompositions::pivotCoord()` creates Euclidean coordinates from the selected composition.
+- **GMM:** `mclust::Mclust()` fits the selected group range; noise initialization and a conjugate prior are optional.
+- **UMAP:** `uwot` creates custom models and projects data through saved or fixed models.
+- **Density fields:** `ggdensity` produces KDE, frequency-polygon, or histogram HDR estimates.
+- **Warping:** an exact-anchor monotonic piecewise-linear mapping interpolates between active ties and extends the nearest tied slope outside them.
+
+## Citation practice
+
+Use the VARG-Tools citation shown on the app's About page. When a plot displays VARG26 reference populations, also cite the underlying data sources listed by the app for the visible groups.
+
+Key methods used by the software include:
+
+- Aitchison, J. (1986). *The Statistical Analysis of Compositional Data*. Chapman & Hall.
+- Egozcue, J.J. et al. (2003). Isometric logratio transformations for compositional data analysis. *Mathematical Geology* 35:279-300.
+- Hron, K., Templ, M. and Filzmoser, P. (2010). Imputation of missing values for compositional data. *Computational Statistics & Data Analysis* 54:3095-3107.
+- Fraley, C. and Raftery, A.E. (2002). Model-based clustering. *Journal of the American Statistical Association* 97:611-631.
+- Scrucca, L. et al. (2016). mclust 5: Clustering, classification and density estimation using Gaussian finite mixture models. *The R Journal* 8(1):289-317.
+- McInnes, L., Healy, J. and Melville, J. (2018). UMAP: Uniform Manifold Approximation and Projection. *arXiv:1802.03426*.
+- Reimer, P.J. et al. (2020). The IntCal20 Northern Hemisphere radiocarbon age calibration curve. *Radiocarbon* 62:725-757.
+- Bronk Ramsey, C. (2008). Deposition models for chronological records. *Quaternary Science Reviews* 27:42-60.
+- Bronk Ramsey, C. (2009). Bayesian analysis of radiocarbon dates. *Radiocarbon* 51:337-360.
+- Bronk Ramsey, C. and Lee, S. (2013). Recent and planned developments of the program OxCal. *Radiocarbon* 55:720-730.
+
+Consult the paper and supplement for the full scientific methods and version-locked demonstration settings.

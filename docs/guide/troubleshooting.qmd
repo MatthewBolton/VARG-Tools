@@ -1,0 +1,51 @@
+---
+title: "Troubleshooting"
+---
+
+Start with the visible symptom. Change one thing at a time and keep a copy of the original input.
+
+## Import and processing
+
+| What you see | Check first | Next action |
+|:--|:--|:--|
+| File will not load | File type, sheet name, malformed rows, or text in numeric columns | Save as UTF-8 CSV or `.xlsx`; remove units and symbols from numeric cells. |
+| Required VARG26 oxides are missing | Column names and total-iron convention | Map the nine oxides and provide total Fe as `FeO`. |
+| No usable rows after preprocessing | Zeros, blanks, exclusions, or non-finite transformed values | Inspect the affected rows; impute only defensible zeros/unmeasured values and correct invalid cells at source. |
+| GMM trace is incomplete or fitting fails | Too many groups, sparse data, or unstable covariance | Reduce the cluster range or enable **Stabilize Estimation**; then compare the changed solution. |
+| Most points become cluster 0 | Outliers/noise initialization or poor input values | Inspect data quality and fitted variables; rerun without **Detect Outliers** only as a deliberate comparison. |
+| Custom UMAP projection skips rows | Saved prepared columns are absent or incomplete | Supply the exact training columns in the recorded order and complete finite values. |
+
+## Visualization and correlation
+
+| What you see | Check first | Next action |
+|:--|:--|:--|
+| Variable Pair Finder has very high workload | Number of predictors and derived features | Turn off derived ratios/sums or select a scientifically bounded predictor set. |
+| No HDR field for a group | Fewer than three usable points or no X/Y spread | Broaden filters or omit that group; do not invent a density field. |
+| Reference fields are blocky | Frequency-polygon/histogram bin count | Increase bins gradually, or use KDE and adjust smoothness. |
+| TAS fields do not align | `SiO2`, `Na2O`, and `K2O` mappings | Correct the axis assignments before interpretation. |
+| Two stratigraphic records are far apart | Coordinate direction and vertical ranges | Set each direction correctly, then use **Affine Preview** for display-only range matching. |
+| Clicking does not create a tie | Crosshairs mode and click order | Select crosshairs, click one Reference point, then one Target point; confirm both sample names in the tie row. |
+| Warping is rejected or folds | Duplicate, crossed, or insufficient ties | Remove conflicting ties and restore monotonic stratigraphic order. |
+| Alignment changes implausibly after adding a tie | Incorrect link or leverage near a record end | Disable the new tie, compare the fit, and recheck its geochemistry and stratigraphy. |
+
+## Chronology
+
+| What you see | Check first | Next action |
+|:--|:--|:--|
+| Duplicate-name warning | Repeated event identifiers across generated code | Rename events or enable the available automatic renaming before generation. |
+| Zero distribution or code failure in OxCal | Date type, age scale, event name, or broken manual edit | Compare every input row with the generated declaration and restore valid syntax. |
+| Unexpected calibration | `R_Date` versus calendar `Date`, selected curve, and age units | Correct the type or curve; do not relabel an age to force the expected output. |
+| Linked model shifts sharply | Tie mapping and event names | Compare with unlinked models and rerun without uncertain ties. |
+
+## Report a reproducible problem
+
+For the hosted app, record:
+
+1. the module and step;
+2. the exact visible error text;
+3. the input file type and relevant column names;
+4. the smallest non-sensitive file that reproduces the problem, if shareable;
+5. browser and operating system;
+6. whether the problem followed a long-running analysis, reconnect, or project restore.
+
+Hosted users cannot access the server's R console. Local users may add console output, but the visible error and reproduction steps are still required.

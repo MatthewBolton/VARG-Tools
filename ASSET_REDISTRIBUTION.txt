@@ -1,0 +1,22 @@
+VARG-Tools bundled-asset redistribution statement
+==================================================
+
+The VARG-Tools source code is licensed under the MIT License. The bundled R
+runtime and R packages retain their own licenses.
+
+The project author confirmed on 2026-07-13 that the following bundled project
+assets may be redistributed with VARG-Tools because they derive from published
+work and are included to reproduce the published software workflow:
+
+- pretrained VARG26 UMAP model files;
+- the public/citable VARG26 coordinate/metadata reference CSV;
+- the example-data archive;
+- user-guide images.
+
+This statement applies to those project-created assets. It does not replace
+the separate licenses retained by R, third-party R packages, or other external
+software included in a platform bundle.
+
+The distributed reference CSV is generated from the checked Paper 1 source-
+status policy. Internal-training, unresolved/withheld, duplicate, and secondary-
+standard rows are not included in the app-facing reference table.

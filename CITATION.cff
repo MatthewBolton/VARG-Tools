@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use VARG-Tools, cite this software release and the associated paper when its final citation is available."
+title: "VARG-Tools"
+type: software
+authors:
+  - family-names: Bolton
+    given-names: "Matthew S. M."
+  - family-names: Jensen
+    given-names: "Britta J. L."
+version: 0.9.8
+date-released: 2026-08-10
+license: MIT
+repository-code: "https://github.com/MatthewBolton/VARG-Tools"
+url: "https://matthewbolton.github.io/VARG_Tools/"
+keywords:
+  - tephrochronology
+  - volcanic glass geochemistry
+  - Shiny
+  - UMAP
+  - Bayesian chronology

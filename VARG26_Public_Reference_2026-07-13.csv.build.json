@@ -1,0 +1,18 @@
+{
+  "input_file": "VARG-Tools_Processed_Data_2025-11-21 _VARG26 FINAL.csv",
+  "input_sha256": "146b45d2510605e2cc1a7f98d83ed717ae2df22c07ec71ee55bfd3ec8b123fd8",
+  "status_script": "build_varg26_source_status.py",
+  "status_script_sha256": "46de2dff3de0c2d0eb621fa4da9da26d742e2499ecfe6026eacee22d0afa9409",
+  "output_file": "VARG26_Public_Reference_2026-07-13.csv",
+  "output_sha256": "0347b5dd260fad8ee7114eb6bf464a1e952628e1eddc3b97b9e87561ea0cf8bd",
+  "input_rows": 54984,
+  "public_rows": 48335,
+  "excluded_rows": 6649,
+  "status_counts": {
+    "duplicate-excluded": 25,
+    "internal-training-only": 6114,
+    "public-app": 48335,
+    "secondary-standard-excluded": 72,
+    "unresolved-withhold": 438
+  }
+}

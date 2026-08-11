@@ -1,0 +1,85 @@
+/* VARG-Tools guide: quiet, readable reference styling. */
+
+.content {
+  max-width: 76rem;
+}
+
+main.content > p,
+main.content > ol,
+main.content > ul {
+  max-width: 72ch;
+}
+
+.navbar-title,
+.sidebar-title {
+  font-weight: 650;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: 0;
+}
+
+h2 {
+  margin-top: 2.25rem;
+  padding-top: 0.25rem;
+}
+
+h3 {
+  margin-top: 1.5rem;
+}
+
+table {
+  width: 100%;
+  margin: 1.25rem 0 1.75rem;
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+th {
+  background: #e9eff1;
+  color: #17252a;
+  font-weight: 650;
+}
+
+th,
+td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid #ccd5d8;
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) {
+  background: rgba(233, 239, 241, 0.38);
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5rem auto;
+}
+
+pre {
+  padding: 1rem;
+  border: 1px solid #d8dfe1;
+  border-radius: 4px;
+}
+
+#TOC {
+  border-left: 2px solid #6f878d;
+  padding-left: 0.9rem;
+}
+
+@media print {
+  .navbar,
+  .sidebar {
+    display: none;
+  }
+
+  table,
+  figure {
+    break-inside: avoid;
+  }
+}

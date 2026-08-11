@@ -1,0 +1,116 @@
+name: Validate Windows standalone
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Draft or published release tag containing the standalone archive
+        required: true
+        default: v0.9.8
+      asset_name:
+        description: Exact Windows standalone ZIP asset name
+        required: true
+        default: VARG-Tools-0.9.8-Windows-standalone.zip
+
+permissions:
+  contents: read
+
+jobs:
+  clean-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Confirm no system R is available
+        shell: powershell
+        run: |
+          $commands = @(Get-Command R, Rscript -ErrorAction SilentlyContinue)
+          if ($commands.Count -gt 0) {
+            $commands | Format-List Name, Source
+            throw "The runner exposes a system R installation; this is not a clean-machine test."
+          }
+          Write-Output "clean_runner_no_system_r"
+
+      - name: Download standalone archive and checksum
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ASSET_NAME: ${{ inputs.asset_name }}
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP 'vargtools-download'
+          New-Item -ItemType Directory -Force -Path $download | Out-Null
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:ASSET_NAME --pattern "$env:ASSET_NAME.sha256" --dir $download
+
+          $archive = Join-Path $download $env:ASSET_NAME
+          $sidecar = "$archive.sha256"
+          $expected = ((Get-Content $sidecar -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Standalone archive checksum mismatch." }
+          Write-Output "standalone_checksum_ok=$actual"
+
+      - name: Extract and test embedded R only
+        shell: powershell
+        env:
+          ASSET_NAME: ${{ inputs.asset_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $download = Join-Path $env:RUNNER_TEMP 'vargtools-download'
+          $extract = Join-Path $env:RUNNER_TEMP 'VARG Tools clean test'
+          Expand-Archive -LiteralPath (Join-Path $download $env:ASSET_NAME) -DestinationPath $extract
+          $bundle = Get-ChildItem $extract -Directory | Select-Object -First 1
+          if (-not $bundle) { throw "Standalone bundle root was not found." }
+
+          $runtime = Join-Path $bundle.FullName 'runtime\R'
+          $rscript = Join-Path $runtime 'bin\x64\Rscript.exe'
+          $launcher = Join-Path $bundle.FullName 'app\run_vargtools.R'
+          if (-not (Test-Path $rscript) -or -not (Test-Path $launcher)) {
+            throw "Embedded R or VARG-Tools launcher is missing."
+          }
+
+          $env:R_HOME = $runtime
+          $env:R_LIBS = ''
+          $env:R_LIBS_SITE = Join-Path $runtime 'library'
+          $env:R_LIBS_USER = Join-Path $runtime 'library'
+          $env:R_ENVIRON_USER = 'NUL'
+          $env:R_PROFILE_USER = 'NUL'
+          $env:PATH = "$(Join-Path $runtime 'bin\x64');$env:SystemRoot\System32;$env:SystemRoot"
+          $env:VARG_MAX_CORES = '2'
+          $env:VARG_BG_PROCESSES = 'false'
+          $env:VARG_SMOKE_TEST = 'true'
+
+          $static = & $rscript $launcher 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($static -join "`n") -notmatch 'vargtools_smoke_check_ok') {
+            throw "Embedded-R static smoke failed:`n$($static -join "`n")"
+          }
+
+          $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+          $listener.Stop()
+          $env:VARG_SMOKE_TEST = 'false'
+          $env:VARG_PORT = [string]$port
+          $env:VARG_LAUNCH_BROWSER = 'false'
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'vargtools-stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'vargtools-stderr.log'
+          $process = Start-Process -FilePath $rscript -ArgumentList @("`"$launcher`"") -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $ready = $false
+            for ($attempt = 1; $attempt -le 120; $attempt++) {
+              if ($process.HasExited) { break }
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port" -TimeoutSec 5
+                if ($response.StatusCode -eq 200 -and $response.Content -match 'VARG-Tools') {
+                  $ready = $true
+                  break
+                }
+              } catch {}
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ready) {
+              throw "Embedded-R app did not return HTTP 200.`n$(Get-Content $stdout,$stderr -ErrorAction SilentlyContinue | Select-Object -Last 100)"
+            }
+            Write-Output "clean_windows_standalone_http_ok port=$port"
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }

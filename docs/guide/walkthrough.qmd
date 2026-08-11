@@ -1,0 +1,17 @@
+---
+title: "Practice Data"
+---
+
+The **Download Test Data** archive contains small, published-data examples for learning specific tasks. Use the file that matches the tool you want to test; there is no requirement to run them as one long analysis.
+
+| File | Practice task | You are done when... |
+|:--|:--|:--|
+| `AP_Geochem_to test.csv` | Import, compositional preprocessing, GMM, VARG26 projection, population labels, or custom plots | The expected generated columns can be inspected and exported. |
+| `Hayes Reference Data for Variable Pairs Finding.xlsx` | Variable Pair Finder | A ranked table and selected bivariate plot are produced. |
+| `VARG_AP1997_AgeDepth_Template.xlsx` | Age-Depth Model | The rows parse correctly and reviewed `P_Sequence` code is generated. |
+| `VARG_AP2017_AgeDepth_Template.xlsx` | A second independent age-depth model | A second reviewed code block is ready for linking or separate use. |
+| `AP tie points to copypaste.xlsx` | Model Linker tie entry | The intended events are mapped to named equality ties in the generated code. |
+
+These examples demonstrate software operation. They do not define a preferred Anchor Point tephrostratigraphy or chronology. The paper supplement records the version-locked scientific demonstration and its interpretive cautions.
+
+For the shortest walkthrough, use [First Successful Run](getting-started.qmd). For any other file, open its destination module and follow the task-specific steps there.

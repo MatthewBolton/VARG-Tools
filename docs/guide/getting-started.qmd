@@ -1,0 +1,67 @@
+---
+title: "First Successful Run"
+---
+
+This short walkthrough confirms that the app, the bundled test data, and the main processing path are working. It should take about ten minutes, excluding queue time on the hosted server.
+
+## 1. Get the example data
+
+From the Home page, select **Download Test Data** and extract the archive. For this walkthrough, use:
+
+```text
+Data for Beta Testers/AP_Geochem_to test.csv
+```
+
+This is demonstration data from published work. It is suitable for learning the interface, not for defining a new Anchor Point interpretation.
+
+## 2. Load the table
+
+1. Open **Processing > 1. Import Data**.
+2. Choose the CSV file and select **Load Data**.
+3. Confirm that the preview has one row per analysis and that the oxide columns are numeric.
+
+**Checkpoint:** the app reports a loaded dataset and displays the nine standard major oxides: `SiO2`, `TiO2`, `Al2O3`, `FeO`, `MnO`, `MgO`, `CaO`, `Na2O`, and `K2O`.
+
+## 3. Prepare the compositions
+
+1. Open **2. Preprocessing**.
+2. Select the nine oxides as compositional columns.
+3. Leave **Impute Zeros/Missing** on for this first run.
+4. Keep **ILR (Pivot Coordinates)** and use `SiO2` as the pivot variable.
+5. Select **Apply Transforms**.
+
+**Checkpoint:** the status reports that transforms were applied and new normalized, imputed, and pivot-coordinate columns appear. The uploaded columns remain unchanged.
+
+Imputation makes log-ratio analysis possible when a selected analyte contains zeros or missing values. It is not a general repair for poor analyses. Inspect exclusions, totals, and quality flags before interpreting results.
+
+## 4. Project into the reference space
+
+1. Open **4. Projection (UMAP)**.
+2. In the VARG26 panel, choose **2D**.
+3. Select **Project onto VARG26**.
+4. Inspect the result after the analysis completes.
+
+**Checkpoint:** the table now contains `UMAP_VARG26_2D_1` and `UMAP_VARG26_2D_2`, and the plot shows the example analyses in the fixed VARG26 coordinate space.
+
+The projection is a screening view. Nearby points have similar multivariate compositions under this model, but proximity does not prove source, eruption, or sample equivalence.
+
+## 5. Export and close the loop
+
+1. Open **6. Export**.
+2. Check the five-row preview and the column groups.
+3. Download CSV or XLSX. The XLSX file includes a column dictionary.
+4. Save a `.varg` project if you plan to resume the supported Processing state.
+
+You have now completed the shortest valid VARG-Tools path. Continue to [Processing](processing.qmd) for clustering and population definition, or [Visualization](visualization.qmd) to compare groups and stratigraphic records.
+
+## Before using your own data
+
+| Check | Why it matters |
+|:--|:--|
+| One row represents one analysis | Repeated means or mixed row types can distort clustering and density estimates. |
+| Oxide columns contain only numeric values | Units, symbols, and text flags can prevent numeric detection. |
+| Total iron is mapped as `FeO` | The fixed VARG26 model expects total Fe expressed as FeO. |
+| Zeros and blanks have known meanings | A structural zero, below-detection value, and unmeasured analyte are not equivalent. |
+| Sample, site, depth, and point identifiers are retained | These fields are needed to audit populations and build stratigraphic comparisons. |
+
+Use the templates distributed in the app when preparing chronology or stratigraphic-correlation files. They reflect the current column expectations.
