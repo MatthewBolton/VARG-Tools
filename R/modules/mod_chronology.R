@@ -419,7 +419,9 @@ mod_chronology_ui <- function(id) {
                         ),
                         actionButton(ns("copy_age_depth"), "Copy to Clipboard", 
                             icon = icon("clipboard"), 
-                            class = "btn-outline-primary btn-sm mb-2"
+                            class = "btn-outline-primary btn-sm mb-2 varg-copy-to-clipboard",
+                            `data-copy-target` = ns("out_age_depth"),
+                            `data-copy-status-input` = ns("copy_age_depth_status")
                         ),
                         verbatimTextOutput(ns("out_age_depth"))
                     )
@@ -551,7 +553,9 @@ mod_chronology_ui <- function(id) {
                         ),
                         actionButton(ns("copy_phase"), "Copy to Clipboard", 
                             icon = icon("clipboard"), 
-                            class = "btn-outline-primary btn-sm mb-2"
+                            class = "btn-outline-primary btn-sm mb-2 varg-copy-to-clipboard",
+                            `data-copy-target` = ns("out_phase"),
+                            `data-copy-status-input` = ns("copy_phase_status")
                         ),
                         verbatimTextOutput(ns("out_phase"))
                     )
@@ -648,7 +652,9 @@ mod_chronology_ui <- function(id) {
                         ),
                         actionButton(ns("copy_linked"), "Copy to Clipboard", 
                             icon = icon("clipboard"), 
-                            class = "btn-outline-primary btn-sm mb-2"
+                            class = "btn-outline-primary btn-sm mb-2 varg-copy-to-clipboard",
+                            `data-copy-target` = ns("out_linked"),
+                            `data-copy-status-input` = ns("copy_linked_status")
                         ),
                         verbatimTextOutput(ns("out_linked"))
                     )
@@ -1568,21 +1574,18 @@ mod_chronology_server <- function(id, tiepoints_reactive = NULL, global_rv = NUL
             generated_age_depth_code()
         })
 
-        # Copy to clipboard handler
-        observeEvent(input$copy_age_depth, {
-            code <- generated_age_depth_code()
-            if (nzchar(code)) {
-                tryCatch(
-                    {
-                        clipr::write_clip(code)
-                        showNotification("Code copied to clipboard!", type = "message", duration = 2)
-                    },
-                    error = function(e) {
-                        showNotification("Failed to copy to clipboard", type = "error")
-                    }
-                )
-            } else {
+        observeEvent(input$copy_age_depth_status, {
+            status <- input$copy_age_depth_status
+            if (isTRUE(status$ok)) {
+                showNotification("Code copied to clipboard!", type = "message", duration = 2)
+            } else if (identical(status$reason, "empty")) {
                 showNotification("No valid age-depth code is available to copy.", type = "warning")
+            } else {
+                showNotification(
+                    "Browser clipboard access was blocked. Select the generated code and copy it manually.",
+                    type = "error",
+                    duration = 6
+                )
             }
         })
 
@@ -1927,21 +1930,18 @@ mod_chronology_server <- function(id, tiepoints_reactive = NULL, global_rv = NUL
             generated_phase_code()
         })
 
-        # Copy to clipboard handler
-        observeEvent(input$copy_phase, {
-            code <- generated_phase_code()
-            if (nzchar(code)) {
-                tryCatch(
-                    {
-                        clipr::write_clip(code)
-                        showNotification("Code copied to clipboard!", type = "message", duration = 2)
-                    },
-                    error = function(e) {
-                        showNotification("Failed to copy to clipboard", type = "error")
-                    }
-                )
-            } else {
+        observeEvent(input$copy_phase_status, {
+            status <- input$copy_phase_status
+            if (isTRUE(status$ok)) {
+                showNotification("Code copied to clipboard!", type = "message", duration = 2)
+            } else if (identical(status$reason, "empty")) {
                 showNotification("No valid phase-model code is available to copy.", type = "warning")
+            } else {
+                showNotification(
+                    "Browser clipboard access was blocked. Select the generated code and copy it manually.",
+                    type = "error",
+                    duration = 6
+                )
             }
         })
 
@@ -2285,18 +2285,17 @@ mod_chronology_server <- function(id, tiepoints_reactive = NULL, global_rv = NUL
             linked_code()
         })
 
-        # Copy to clipboard handler
-        observeEvent(input$copy_linked, {
-            code <- linked_code()
-            if (nzchar(code)) {
-                tryCatch(
-                    {
-                        clipr::write_clip(code)
-                        showNotification("Code copied to clipboard!", type = "message", duration = 2)
-                    },
-                    error = function(e) {
-                        showNotification("Failed to copy to clipboard", type = "error")
-                    }
+        observeEvent(input$copy_linked_status, {
+            status <- input$copy_linked_status
+            if (isTRUE(status$ok)) {
+                showNotification("Code copied to clipboard!", type = "message", duration = 2)
+            } else if (identical(status$reason, "empty")) {
+                showNotification("No valid linked-model code is available to copy.", type = "warning")
+            } else {
+                showNotification(
+                    "Browser clipboard access was blocked. Select the generated code and copy it manually.",
+                    type = "error",
+                    duration = 6
                 )
             }
         })

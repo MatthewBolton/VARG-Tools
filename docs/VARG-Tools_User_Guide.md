@@ -77,7 +77,7 @@ This is demonstration data from published work. It is suitable for learning the 
 4. Keep **ILR (Pivot Coordinates)** and use `SiO2` as the pivot variable.
 5. Select **Apply Transforms**.
 
-**Checkpoint:** the status reports that transforms were applied and new normalized, imputed, and pivot-coordinate columns appear. The uploaded columns remain unchanged.
+**Checkpoint:** the status reports that transforms were applied and new normalized, imputed, and pivot-coordinate columns appear. For this example file, the imputation detail reports `MnO: 171 values` and `TiO2: 1 value`. The uploaded columns remain unchanged.
 
 Imputation makes log-ratio analysis possible when a selected analyte contains zeros or missing values. It is not a general repair for poor analyses. Inspect exclusions, totals, and quality flags before interpreting results.
 

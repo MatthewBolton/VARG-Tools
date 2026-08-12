@@ -111,6 +111,82 @@
 
   window.VARGTools = window.VARGTools || {};
 
+  function fallbackCopyText(text) {
+    var textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    var copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+
+    if (!copied) {
+      throw new Error("Browser copy command was rejected");
+    }
+    return "fallback";
+  }
+
+  window.VARGTools.copyTextToClipboard = function (text) {
+    if (window.isSecureContext && window.navigator &&
+        window.navigator.clipboard &&
+        typeof window.navigator.clipboard.writeText === "function") {
+      return window.navigator.clipboard.writeText(text)
+        .then(function () { return "clipboard"; })
+        .catch(function () { return fallbackCopyText(text); });
+    }
+
+    try {
+      return Promise.resolve(fallbackCopyText(text));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
+  function reportCopyStatus(inputId, status) {
+    if (!inputId || !window.Shiny ||
+        typeof window.Shiny.setInputValue !== "function") {
+      return;
+    }
+    status.nonce = Date.now();
+    window.Shiny.setInputValue(inputId, status, { priority: "event" });
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target && event.target.closest
+      ? event.target.closest(".varg-copy-to-clipboard")
+      : null;
+    if (!button) {
+      return;
+    }
+
+    var targetId = button.getAttribute("data-copy-target");
+    var statusInput = button.getAttribute("data-copy-status-input");
+    var output = targetId ? document.getElementById(targetId) : null;
+    var text = output && output.textContent ? output.textContent : "";
+
+    if (!text.trim()) {
+      reportCopyStatus(statusInput, { ok: false, reason: "empty" });
+      return;
+    }
+
+    window.VARGTools.copyTextToClipboard(text)
+      .then(function (method) {
+        reportCopyStatus(statusInput, { ok: true, method: method });
+      })
+      .catch(function () {
+        reportCopyStatus(statusInput, { ok: false, reason: "blocked" });
+      });
+  });
+
   window.VARGTools.stopHostedSession = function (hostWindow) {
     var host = hostWindow || window.top;
     var stopHandler = host && host.Shiny && host.Shiny.instances &&

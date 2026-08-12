@@ -1,5 +1,288 @@
 # mod_processing.R
 
+processing_heavy_worker_cap <- function() {
+  limiter_cap <- tryCatch(
+    as.integer(heavy_job_limiter_config()$cpu_tokens),
+    error = function(e) NA_integer_
+  )
+  configured_cap <- suppressWarnings(as.integer(Sys.getenv("VARG_MAX_CORES", unset = "0")))
+  if (length(configured_cap) != 1L || is.na(configured_cap) || configured_cap < 1L) {
+    available <- suppressWarnings(parallel::detectCores(logical = TRUE))
+    if (length(available) != 1L || is.na(available) || available < 2L) available <- 2L
+    configured_cap <- max(1L, available - 1L)
+  }
+  if (length(limiter_cap) != 1L || is.na(limiter_cap) || limiter_cap < 1L) {
+    limiter_cap <- configured_cap
+  }
+  max(1L, min(limiter_cap, configured_cap))
+}
+
+processing_blas_worker_env <- function(workers) {
+  workers <- suppressWarnings(as.integer(workers))
+  if (length(workers) != 1L || is.na(workers) || workers < 1L) workers <- 1L
+  value <- as.character(workers)
+  c(
+    OPENBLAS_NUM_THREADS = value,
+    OMP_NUM_THREADS = value,
+    OMP_THREAD_LIMIT = value,
+    MKL_NUM_THREADS = value,
+    BLIS_NUM_THREADS = value,
+    VECLIB_MAXIMUM_THREADS = value
+  )
+}
+
+processing_report_imputation_method_label <- function(method) {
+  method <- if (length(method) > 0L && !is.null(method)) as.character(method[[1L]]) else "unknown"
+  switch(
+    method,
+    ltsReg = "Robust regression (ltsReg)",
+    lm = "Standard regression (lm)",
+    auto = "Auto",
+    unknown = "Unknown",
+    method
+  )
+}
+
+processing_report_imputation_auto_html <- function(missingness, row_count, resolved_method) {
+  if (nrow(missingness) == 0L) return("")
+
+  maximum_row <- missingness[which.max(missingness[["Affected (%)"]]), , drop = FALSE]
+  maximum_fraction <- maximum_row[["Affected (%)"]]
+  threshold_result <- if (maximum_fraction > 50) {
+    "was above the 50% threshold, so Auto selected standard regression"
+  } else {
+    "was not above the 50% threshold, so Auto retained robust regression"
+  }
+
+  paste0(
+    "<p class='meta'>Auto evaluated missingness across the full ", row_count,
+    "-row dataset. The maximum affected fraction was ", maximum_fraction, "% in ",
+    htmltools::htmlEscape(maximum_row$Analyte), "; this ", threshold_result,
+    ". Method used: ", processing_report_imputation_method_label(resolved_method), ".</p>"
+  )
+}
+
+processing_report_dimensions_label <- function(dimensions) {
+  if (is.null(dimensions) || length(dimensions) == 0L) return("Unknown")
+
+  if (is.character(dimensions)) {
+    normalized <- tolower(dimensions)
+    if (any(normalized == "both")) return("1D and 2D")
+    dimensions <- sub("d$", "", normalized)
+  }
+
+  dimensions <- suppressWarnings(as.integer(dimensions))
+  dimensions <- unique(dimensions[dimensions %in% c(1L, 2L)])
+  if (length(dimensions) == 0L) return("Unknown")
+  paste(paste0(dimensions, "D"), collapse = " and ")
+}
+
+processing_report_umap_html <- function(umap_config) {
+  if (is.null(umap_config)) {
+    return("<h2>4. UMAP Dimensionality Reduction</h2><p class='muted'>UMAP was not run in this session.</p>")
+  }
+
+  esc <- function(value) htmltools::htmlEscape(as.character(value))
+  mode <- if (length(umap_config$mode) > 0L) as.character(umap_config$mode[[1L]]) else "unknown"
+  html <- paste0(
+    "<h2>4. UMAP Dimensionality Reduction</h2><table><tbody>",
+    "<tr><td><strong>Mode</strong></td><td>", esc(mode), "</td></tr>"
+  )
+
+  if (identical(mode, "pretrained")) {
+    html <- paste0(
+      html,
+      "<tr><td><strong>VARG26 dimensions</strong></td><td>",
+      esc(processing_report_dimensions_label(umap_config$VARG26_dims)), "</td></tr>",
+      "<tr><td><strong>VARG26 oxides</strong></td><td>",
+      esc(paste(umap_config$VARG26_oxides, collapse = ", ")), "</td></tr>"
+    )
+  } else {
+    dimensions <- umap_config$n_components
+    if (is.null(dimensions)) dimensions <- umap_config$dimensions
+    html <- paste0(
+      html,
+      "<tr><td><strong>Components</strong></td><td>",
+      esc(processing_report_dimensions_label(dimensions)), "</td></tr>",
+      "<tr><td><strong>n_neighbors</strong></td><td>", esc(umap_config$n_neighbors), "</td></tr>",
+      "<tr><td><strong>min_dist</strong></td><td>", esc(umap_config$min_dist), "</td></tr>",
+      "<tr><td><strong>dens_scale</strong></td><td>", esc(umap_config$dens_scale), "</td></tr>",
+      "<tr><td><strong>Semi-supervised</strong></td><td>",
+      if (isTRUE(umap_config$semisupervised)) "Yes" else "No", "</td></tr>",
+      "<tr><td><strong>Columns used</strong></td><td>",
+      esc(paste(umap_config$columns_used, collapse = ", ")), "</td></tr>",
+      "</tbody></table>"
+    )
+  }
+
+  if (identical(mode, "pretrained")) html <- paste0(html, "</tbody></table>")
+  html
+}
+
+processing_report_imputation_summary <- function(data, compositional_columns) {
+  compositional_columns <- intersect(compositional_columns, names(data))
+  if (length(compositional_columns) == 0L || nrow(data) == 0L) return(data.frame())
+
+  rows <- lapply(compositional_columns, function(column) {
+    values <- suppressWarnings(as.numeric(as.character(data[[column]])))
+    missing <- is.na(values) | !is.finite(values)
+    non_positive <- !missing & values <= 1e-10
+    affected <- missing | non_positive
+    data.frame(
+      Analyte = column,
+      Missing = sum(missing),
+      `Zero/non-positive` = sum(non_positive),
+      Total = length(values),
+      Affected = sum(affected),
+      `Affected (%)` = round(mean(affected) * 100, 1),
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  summary <- do.call(rbind, rows)
+  summary[summary$Affected > 0L, , drop = FALSE]
+}
+
+processing_report_structured_missingness <- function(data, compositional_columns) {
+  normalized_names <- tolower(gsub("[^a-z0-9]", "", names(data)))
+  candidate_keys <- c("coreid", "siteid", "recordid", "core", "site")
+  group_index <- match(candidate_keys, normalized_names, nomatch = 0L)
+  group_index <- group_index[group_index > 0L]
+  if (length(group_index) == 0L || nrow(data) == 0L) return(data.frame())
+
+  group_column <- names(data)[group_index[[1L]]]
+  groups <- as.character(data[[group_column]])
+  valid_groups <- !is.na(groups) & nzchar(trimws(groups))
+  compositional_columns <- intersect(compositional_columns, names(data))
+  findings <- list()
+
+  for (column in compositional_columns) {
+    values <- suppressWarnings(as.numeric(as.character(data[[column]])))
+    affected <- is.na(values) | !is.finite(values) | values <= 1e-10
+    if (!any(!affected)) next
+
+    for (group in unique(groups[valid_groups])) {
+      in_group <- valid_groups & groups == group
+      if (sum(in_group) >= 2L && all(affected[in_group])) {
+        findings[[length(findings) + 1L]] <- data.frame(
+          `Grouping column` = group_column,
+          Group = group,
+          Analyte = column,
+          Rows = sum(in_group),
+          check.names = FALSE,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+
+  if (length(findings) == 0L) return(data.frame())
+  do.call(rbind, findings)
+}
+
+processing_gmm_selected_compositional_columns <- function(pipeline_config, ui_columns = NULL) {
+  configured <- pipeline_config$preprocessing$comp_cols
+  if (!is.null(configured) && length(configured) > 0L) {
+    return(as.character(configured))
+  }
+  if (is.null(ui_columns)) character(0) else as.character(ui_columns)
+}
+
+processing_gmm_cluster_composition <- function(data, compositional_columns) {
+  if (is.null(data) || !"gmm_cluster" %in% names(data)) return(NULL)
+
+  valid_clusters <- !is.na(data$gmm_cluster)
+  if (!any(valid_clusters)) return(NULL)
+
+  compositional_columns <- unique(as.character(compositional_columns))
+  compositional_columns <- compositional_columns[nzchar(compositional_columns)]
+  if (length(compositional_columns) == 0L) return(NULL)
+
+  df <- data[valid_clusters, , drop = FALSE]
+  cluster_labels <- as.character(df$gmm_cluster)
+  cluster_levels <- unique(cluster_labels)
+  numeric_levels <- suppressWarnings(as.numeric(cluster_levels))
+  if (all(!is.na(numeric_levels))) {
+    cluster_levels <- as.character(sort(unique(numeric_levels)))
+  } else {
+    cluster_levels <- sort(unique(cluster_levels))
+  }
+
+  source_columns <- vapply(
+    compositional_columns,
+    function(column) {
+      imputed <- paste0(column, "_imp")
+      if (imputed %in% names(df)) imputed else if (column %in% names(df)) column else NA_character_
+    },
+    character(1)
+  )
+  available <- !is.na(source_columns)
+  source_columns <- source_columns[available]
+  display_names <- compositional_columns[available]
+  if (length(source_columns) == 0L) return(NULL)
+
+  uses_imputed <- grepl("_imp$", source_columns)
+  data_source <- if (all(uses_imputed)) {
+    "imputed"
+  } else if (any(uses_imputed)) {
+    "mixed"
+  } else {
+    "raw"
+  }
+
+  format_mean_sd <- function(values) {
+    values <- suppressWarnings(as.numeric(as.character(values)))
+    if (all(is.na(values))) return("NA \u00B1 NA")
+    mean_value <- mean(values, na.rm = TRUE)
+    sd_value <- stats::sd(values, na.rm = TRUE)
+    if (!is.finite(mean_value)) mean_value <- NA_real_
+    if (!is.finite(sd_value)) sd_value <- NA_real_
+    paste0(
+      formatC(mean_value, format = "f", digits = 2),
+      " \u00B1 ",
+      formatC(sd_value, format = "f", digits = 2)
+    )
+  }
+
+  summary_df <- data.frame(
+    Cluster = cluster_levels,
+    n = vapply(cluster_levels, function(cluster) sum(cluster_labels == cluster), integer(1)),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  for (index in seq_along(source_columns)) {
+    summary_df[[display_names[index]]] <- vapply(
+      cluster_levels,
+      function(cluster) format_mean_sd(df[[source_columns[index]]][cluster_labels == cluster]),
+      character(1)
+    )
+  }
+
+  attr(summary_df, "data_source") <- data_source
+  summary_df
+}
+
+processing_gmm_composition_source_label <- function(data_source) {
+  switch(
+    data_source,
+    imputed = "imputed values (after compositional imputation, before log-ratio transformation)",
+    mixed = "available imputed values, with raw values used where no imputed column was available",
+    "raw uploaded values (imputation was not applied)"
+  )
+}
+
+processing_report_gmm_composition_html <- function(composition_data, df_to_html) {
+  if (is.null(composition_data) || nrow(composition_data) == 0L) return("")
+  source_label <- processing_gmm_composition_source_label(attr(composition_data, "data_source") %||% "raw")
+  paste0(
+    "<h3>Cluster Composition Summary (Mean &plusmn; SD)</h3>",
+    "<p class='meta'>Computed from ", htmltools::htmlEscape(source_label),
+    " for the compositional columns used in preprocessing.</p>",
+    df_to_html(composition_data)
+  )
+}
+
 mod_processing_ui <- function(id) {
   ns <- NS(id)
 
@@ -471,9 +754,47 @@ mod_processing_ui <- function(id) {
   )
 }
 
+umap_result_tab_name <- function(mode, dimensions) {
+  mode_prefix <- switch(
+    tolower(as.character(mode)[1]),
+    pretrained = "VARG26",
+    new = "New",
+    loaded = "Loaded",
+    NULL
+  )
+  if (is.null(mode_prefix)) return(NULL)
+
+  dimension_values <- if (length(dimensions) == 1L && is.character(dimensions)) {
+    switch(
+      tolower(dimensions),
+      "1d" = 1L,
+      "2d" = 2L,
+      "both" = c(1L, 2L),
+      integer(0)
+    )
+  } else {
+    suppressWarnings(as.integer(dimensions))
+  }
+  dimension_values <- dimension_values[dimension_values %in% c(1L, 2L)]
+  if (length(dimension_values) == 0L) return(NULL)
+
+  paste(mode_prefix, if (2L %in% dimension_values) "2D" else "1D")
+}
+
 mod_processing_server <- function(id, global_rv = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    focus_umap_result_tab <- function(mode, dimensions) {
+      selected_tab <- umap_result_tab_name(mode, dimensions)
+      if (is.null(selected_tab)) return(invisible(NULL))
+
+      session$onFlushed(
+        function() updateTabsetPanel(session, "umap_tab", selected = selected_tab),
+        once = TRUE
+      )
+      invisible(selected_tab)
+    }
 
     # --- Reactive Values ---
     # Use global_rv if provided, otherwise create local
@@ -2658,7 +2979,13 @@ mod_processing_server <- function(id, global_rv = NULL) {
       use_prior <- input$use_prior
 
       # Notify user and set running state
-      if (!begin_heavy_job("GMM clustering")) return()
+      gmm_worker_cap <- if (isTRUE(USE_BG_PROCESSES)) processing_heavy_worker_cap() else 1L
+      if (!begin_heavy_job(
+        "GMM clustering",
+        min_workers = 1L,
+        max_workers = gmm_worker_cap
+      )) return()
+      gmm_workers <- heavy_job_limiter_workers(heavy_job_lock, default = 1L)
       gmm_running(TRUE)
       shinyjs::show("gmm_progress_container")
       shinyjs::disable("run_gmm")
@@ -2680,7 +3007,14 @@ mod_processing_server <- function(id, global_rv = NULL) {
       if (USE_BG_PROCESSES) {
         # --- Background path: cancellable via callr ---
         shinyjs::show("cancel_gmm")
-        notif_id <- showNotification("GMM clustering started in background. You can cancel anytime. You'll be notified when finished.", type = "message", duration = NULL, closeButton = FALSE)
+        notif_id <- showNotification(
+          paste0(
+            "GMM clustering started in background with ", gmm_workers,
+            if (gmm_workers == 1L) " CPU worker. " else " CPU workers. ",
+            "You can cancel anytime. You'll be notified when finished."
+          ),
+          type = "message", duration = NULL, closeButton = FALSE
+        )
 
         # Store context for the poller
         gmm_bg_context$valid <- valid
@@ -2693,6 +3027,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
         gmm_bg_context$use_prior <- use_prior
         gmm_bg_context$gmin <- gmin
         gmm_bg_context$gmax <- gmax
+        gmm_bg_context$workers <- gmm_workers
         gmm_bg_context$token <- capture_data_token(current_gmm_context())
 
         proc <- tryCatch(
@@ -2705,6 +3040,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
               noise_init = noise_init,
               use_prior = use_prior
             ),
+            env = processing_blas_worker_env(gmm_workers),
             supervise = TRUE
           ),
           error = function(e) {
@@ -3089,73 +3425,11 @@ mod_processing_server <- function(id, global_rv = NULL) {
     # Build cluster composition summary from untransformed oxide columns in rv$data
     gmm_cluster_composition_data <- reactive({
       req(rv$data)
-      if (!"gmm_cluster" %in% names(rv$data)) return(NULL)
-
-      df <- rv$data
-      valid_clusters <- !is.na(df$gmm_cluster)
-      if (!any(valid_clusters)) return(NULL)
-
-      df <- df[valid_clusters, , drop = FALSE]
-      cluster_labels <- as.character(df$gmm_cluster)
-      cluster_levels <- unique(cluster_labels)
-      cluster_levels_num <- suppressWarnings(as.numeric(cluster_levels))
-      if (all(!is.na(cluster_levels_num))) {
-        cluster_levels <- as.character(sort(unique(cluster_levels_num)))
-      } else {
-        cluster_levels <- sort(unique(cluster_levels))
-      }
-
-      # Use only the compositional columns the user selected for transformation
-      selected_comp <- preproc_state$comp_cols
-      if (is.null(selected_comp) || length(selected_comp) == 0) return(NULL)
-
-      # Prefer imputed columns (which fed the log-ratio transform);
-      # fall back to raw columns if imputation was not applied
-      data_source <- "raw"
-      oxide_cols <- character(0)
-      for (col in selected_comp) {
-        imp_name <- paste0(col, "_imp")
-        if (imp_name %in% names(df)) {
-          oxide_cols <- c(oxide_cols, imp_name)
-          data_source <- "imputed"
-        } else if (col %in% names(df)) {
-          oxide_cols <- c(oxide_cols, col)
-        }
-      }
-      # Display names: strip _imp suffix for readability
-      display_names <- sub("_imp$", "", oxide_cols)
-
-      if (length(oxide_cols) == 0) return(NULL)
-
-      format_mean_sd <- function(x) {
-        if (all(is.na(x))) return("NA \u00B1 NA")
-        m <- mean(x, na.rm = TRUE)
-        s <- stats::sd(x, na.rm = TRUE)
-        if (!is.finite(m)) m <- NA_real_
-        if (!is.finite(s)) s <- NA_real_
-        paste0(
-          formatC(m, format = "f", digits = 2),
-          " \u00B1 ",
-          formatC(s, format = "f", digits = 2)
-        )
-      }
-
-      summary_df <- data.frame(
-        Cluster = cluster_levels,
-        stringsAsFactors = FALSE,
-        check.names = FALSE
+      selected_comp <- processing_gmm_selected_compositional_columns(
+        rv$pipeline_config,
+        preproc_state$comp_cols
       )
-
-      for (i in seq_along(oxide_cols)) {
-        summary_df[[display_names[i]]] <- vapply(
-          cluster_levels,
-          function(cl) format_mean_sd(df[[oxide_cols[i]]][cluster_labels == cl]),
-          character(1)
-        )
-      }
-
-      attr(summary_df, "data_source") <- data_source
-      summary_df
+      processing_gmm_cluster_composition(rv$data, selected_comp)
     })
 
     output$gmm_cluster_report <- renderDT({
@@ -3188,11 +3462,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
       req(gmm_cluster_composition_data())
       df <- gmm_cluster_composition_data()
       data_source <- attr(df, "data_source") %||% "raw"
-      source_label <- if (identical(data_source, "imputed")) {
-        "imputed values (after compositional imputation, before log-ratio transformation)"
-      } else {
-        "raw uploaded values (imputation was not applied)"
-      }
+      source_label <- processing_gmm_composition_source_label(data_source)
       caption_text <- paste0(
         "Values shown as Mean \u00B1 1 SD computed from the ", source_label,
         " for the compositional columns used in the transformation."
@@ -3215,7 +3485,8 @@ mod_processing_server <- function(id, global_rv = NULL) {
           caption_text
         )
       ) %>%
-        formatStyle("Cluster", fontWeight = "bold")
+        formatStyle("Cluster", fontWeight = "bold") %>%
+        formatStyle("n", fontWeight = "bold")
     })
 
     output$download_cluster_report <- downloadHandler(
@@ -3421,7 +3692,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
       has_imp <- all(imp_cols %in% names(df))
 
       # Define the VARG26 projection function (shared by both paths)
-      varg26_func <- function(df, dims_choice, varg26_oxides, model_path_1d, model_path_2d, add_noise, has_imp) {
+      varg26_func <- function(df, dims_choice, varg26_oxides, model_path_1d, model_path_2d, add_noise, has_imp, workers = 1L) {
           # --- Inline ensure_VARG26_inputs ---
           imp_cols <- paste0(varg26_oxides, "_imp")
           if (has_imp) {
@@ -3470,13 +3741,21 @@ mod_processing_server <- function(id, global_rv = NULL) {
 
           if (dims_choice %in% c("1d", "both")) {
             model_1d <- uwot::load_uwot(model_path_1d)
-            emb1 <- uwot::umap_transform(matrix_in[valid, ], model_1d)
+            emb1 <- uwot::umap_transform(
+              matrix_in[valid, ], model_1d,
+              n_threads = workers,
+              n_sgd_threads = 1
+            )
             df$UMAP_VARG26_1D <- NA
             df$UMAP_VARG26_1D[valid] <- emb1[, 1]
           }
           if (dims_choice %in% c("2d", "both")) {
             model_2d <- uwot::load_uwot(model_path_2d)
-            emb2 <- uwot::umap_transform(matrix_in[valid, ], model_2d)
+            emb2 <- uwot::umap_transform(
+              matrix_in[valid, ], model_2d,
+              n_threads = workers,
+              n_sgd_threads = 1
+            )
             df$UMAP_VARG26_2D_1 <- NA
             df$UMAP_VARG26_2D_2 <- NA
             df$UMAP_VARG26_2D_1[valid] <- emb2[, 1]
@@ -3487,13 +3766,22 @@ mod_processing_server <- function(id, global_rv = NULL) {
       }
       environment(varg26_func) <- globalenv()  # Prevent callr from serializing reactive env
 
-      if (!begin_heavy_job("VARG26 projection")) return()
+      if (!begin_heavy_job(
+        "VARG26 projection",
+        min_workers = 1L,
+        max_workers = processing_heavy_worker_cap()
+      )) return()
+      varg26_workers <- heavy_job_limiter_workers(heavy_job_lock, default = 1L)
       if (USE_BG_PROCESSES) {
         # --- Background path: cancellable via callr ---
         shinyjs::show("cancel_varg26")
         shinyjs::disable("run_umap_pre")
         varg26_bg_context$notif_id <- showNotification(
-          "VARG26 projection started in background. You can cancel anytime.",
+          paste0(
+            "VARG26 projection started in background with ", varg26_workers,
+            if (varg26_workers == 1L) " CPU worker. " else " CPU workers. ",
+            "You can cancel anytime."
+          ),
           type = "message", duration = NULL, closeButton = FALSE
         )
         varg26_bg_context$dims_choice <- dims_choice
@@ -3504,7 +3792,8 @@ mod_processing_server <- function(id, global_rv = NULL) {
             func = varg26_func,
             args = list(df = df, dims_choice = dims_choice, varg26_oxides = varg26_oxides,
                         model_path_1d = model_path_1d, model_path_2d = model_path_2d,
-                        add_noise = add_noise, has_imp = has_imp),
+                        add_noise = add_noise, has_imp = has_imp,
+                        workers = varg26_workers),
             supervise = TRUE
           ),
           error = function(e) {
@@ -3523,7 +3812,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
         shinyjs::disable("run_umap_pre")
         result <- withProgress(message = "Running VARG26 projection...", value = 0.5, {
           tryCatch(
-            varg26_func(df, dims_choice, varg26_oxides, model_path_1d, model_path_2d, add_noise, has_imp),
+            varg26_func(df, dims_choice, varg26_oxides, model_path_1d, model_path_2d, add_noise, has_imp, varg26_workers),
             error = function(e) {
               showNotification(
                 paste0(
@@ -3554,6 +3843,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
             )
           }
           bump_data_generation()
+          focus_umap_result_tab("pretrained", dims_choice)
 
           showNotification("VARG26 projection successful!", type = "message")
         }
@@ -3623,6 +3913,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
           )
         }
         bump_data_generation()
+        focus_umap_result_tab("pretrained", varg26_bg_context$dims_choice)
 
         showNotification("VARG26 projection successful!", type = "message")
       }
@@ -3631,8 +3922,13 @@ mod_processing_server <- function(id, global_rv = NULL) {
     # --- New UMAP ---
     observeEvent(input$run_umap_new, {
       req(rv$data, input$umap_dims)
-      if (!begin_heavy_job("new UMAP")) return()
+      if (!begin_heavy_job(
+        "new UMAP",
+        min_workers = 1L,
+        max_workers = processing_heavy_worker_cap()
+      )) return()
       on.exit(finish_heavy_job(), add = TRUE)
+      umap_workers <- heavy_job_limiter_workers(heavy_job_lock, default = 1L)
 
       # Prepare data in main session first
       tryCatch(
@@ -3698,7 +3994,13 @@ mod_processing_server <- function(id, global_rv = NULL) {
           data_for_umap <- mat[valid, ]
 
           # Use withProgress for synchronous UMAP
-          withProgress(message = "Running UMAP...", value = 0, {
+          withProgress(
+            message = paste0(
+              "Running UMAP with ", umap_workers,
+              if (umap_workers == 1L) " CPU worker..." else " CPU workers..."
+            ),
+            value = 0,
+            {
             incProgress(0.1, detail = "Initializing...")
 
             # Update data — remove only the dimension(s) being replaced (preserve other dims, VARG26, loaded)
@@ -3727,6 +4029,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
                 target_weight = target_weight,
                 ret_model = TRUE,
                 seed = umap_seed,
+                n_threads = umap_workers,
                 n_sgd_threads = 1
               )
               df_processed$UMAP_new_1D <- NA
@@ -3748,6 +4051,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
                 target_weight = target_weight,
                 ret_model = TRUE,
                 seed = umap_seed,
+                n_threads = umap_workers,
                 n_sgd_threads = 1
               )
               df_processed$UMAP_new_2D_1 <- NA
@@ -3794,9 +4098,11 @@ mod_processing_server <- function(id, global_rv = NULL) {
               )
             )
             bump_data_generation()
+            focus_umap_result_tab("new", saved_dimensions)
 
             showNotification("UMAP created successfully!", type = "message")
-          })
+            }
+          )
         },
         error = function(e) {
           showNotification(
@@ -4158,6 +4464,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
         rv$data <- projected_data
         rv$umap_mode_ran <- "loaded"
         bump_data_generation()
+        focus_umap_result_tab("loaded", dimensions)
         showNotification(
           sprintf(
             "Projected %d of %d rows using the loaded %s UMAP model.",
@@ -4704,14 +5011,14 @@ mod_processing_server <- function(id, global_rv = NULL) {
         if (!is.null(pre)) {
           comp_txt <- if (length(pre$comp_cols) > 0) htmltools::htmlEscape(paste(pre$comp_cols, collapse = ", ")) else "<em>None</em>"
           noncomp_txt <- if (length(pre$noncomp_cols) > 0) htmltools::htmlEscape(paste(pre$noncomp_cols, collapse = ", ")) else "<em>None</em>"
-          sections <- c(sections, list(paste0(
+          preprocessing_html <- paste0(
             "<h2>2. Preprocessing</h2>",
             "<table><tbody>",
             "<tr><td><strong>Compositional columns</strong></td><td>", comp_txt, "</td></tr>",
             "<tr><td><strong>Non-compositional columns</strong></td><td>", noncomp_txt, "</td></tr>",
             "<tr><td><strong>Imputation</strong></td><td>",
             if (isTRUE(pre$do_impute)) {
-              paste0("Yes (", if (!is.null(pre$imputation_method)) pre$imputation_method else "unknown", ")")
+              processing_report_imputation_method_label(pre$imputation_method)
             } else {
               "No"
             },
@@ -4728,7 +5035,40 @@ mod_processing_server <- function(id, global_rv = NULL) {
             },
             "</td></tr>",
             "</tbody></table>"
-          )))
+          )
+
+          if (isTRUE(pre$do_impute)) {
+            missingness <- processing_report_imputation_summary(rv$data, pre$comp_cols)
+            if (nrow(missingness) > 0L) {
+              preprocessing_html <- paste0(
+                preprocessing_html,
+                "<h3>Values requiring imputation</h3>",
+                df_to_html(missingness)
+              )
+
+              if (identical(pre$impute_method, "auto")) {
+                preprocessing_html <- paste0(
+                  preprocessing_html,
+                  processing_report_imputation_auto_html(
+                    missingness,
+                    nrow(rv$data),
+                    pre$imputation_method
+                  )
+                )
+              }
+
+              structured_missingness <- processing_report_structured_missingness(rv$data, pre$comp_cols)
+              if (nrow(structured_missingness) > 0L) {
+                preprocessing_html <- paste0(
+                  preprocessing_html,
+                  "<div class='caution'><strong>Structured missingness:</strong> The following core/site groups have no measured values for an analyte. Their imputed values are estimated from relationships learned from other rows; neither robust nor standard regression can validate group-specific behavior without measured values.</div>",
+                  df_to_html(structured_missingness)
+                )
+              }
+            }
+          }
+
+          sections <- c(sections, list(preprocessing_html))
         } else {
           sections <- c(sections, list("<h2>2. Preprocessing</h2><p class='muted'>No preprocessing was performed.</p>"))
         }
@@ -4760,6 +5100,12 @@ mod_processing_server <- function(id, global_rv = NULL) {
             gmm_html <- paste0(gmm_html, "<h3>Cluster Summary (Mean &plusmn; SD)</h3>", df_to_html(report_df))
           }
 
+          composition_df <- tryCatch(gmm_cluster_composition_data(), error = function(e) NULL)
+          gmm_html <- paste0(
+            gmm_html,
+            processing_report_gmm_composition_html(composition_df, df_to_html)
+          )
+
           sections <- c(sections, list(gmm_html))
         } else {
           sections <- c(sections, list("<h2>3. GMM Clustering</h2><p class='muted'>GMM was not run in this session.</p>"))
@@ -4767,30 +5113,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
 
         # --- UMAP ---
         umap_cfg <- if (!is.null(rv$pipeline_config)) rv$pipeline_config$umap else NULL
-        if (!is.null(umap_cfg)) {
-          umap_html <- "<h2>4. UMAP Dimensionality Reduction</h2><table><tbody>"
-          umap_html <- paste0(umap_html, "<tr><td><strong>Mode</strong></td><td>", htmltools::htmlEscape(as.character(umap_cfg$mode)), "</td></tr>")
-
-          if (umap_cfg$mode == "pretrained") {
-            umap_html <- paste0(umap_html,
-              "<tr><td><strong>VARG26 dimensions</strong></td><td>", htmltools::htmlEscape(as.character(umap_cfg$VARG26_dims)), "</td></tr>",
-              "<tr><td><strong>VARG26 oxides</strong></td><td>", htmltools::htmlEscape(paste(umap_cfg$VARG26_oxides, collapse = ", ")), "</td></tr>"
-            )
-          } else {
-            umap_html <- paste0(umap_html,
-              "<tr><td><strong>Components</strong></td><td>", umap_cfg$n_components, "</td></tr>",
-              "<tr><td><strong>n_neighbors</strong></td><td>", umap_cfg$n_neighbors, "</td></tr>",
-              "<tr><td><strong>min_dist</strong></td><td>", umap_cfg$min_dist, "</td></tr>",
-              "<tr><td><strong>dens_scale</strong></td><td>", umap_cfg$dens_scale, "</td></tr>",
-              "<tr><td><strong>Semi-supervised</strong></td><td>", if (isTRUE(umap_cfg$semisupervised)) "Yes" else "No", "</td></tr>",
-              "<tr><td><strong>Columns used</strong></td><td>", htmltools::htmlEscape(paste(umap_cfg$columns_used, collapse = ", ")), "</td></tr>"
-            )
-          }
-          umap_html <- paste0(umap_html, "</tbody></table>")
-          sections <- c(sections, list(umap_html))
-        } else {
-          sections <- c(sections, list("<h2>4. UMAP Dimensionality Reduction</h2><p class='muted'>UMAP was not run in this session.</p>"))
-        }
+        sections <- c(sections, list(processing_report_umap_html(umap_cfg)))
 
         # --- Populations ---
         if ("population" %in% names(rv$data)) {
@@ -4816,6 +5139,7 @@ mod_processing_server <- function(id, global_rv = NULL) {
           img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; }
           .meta { color: #777; font-size: 0.9em; }
           .muted { color: #999; font-style: italic; }
+          .caution { background: #fff6db; border-left: 4px solid #d89b00; padding: 10px 12px; margin: 12px 0; }
           caption { font-size: 0.95em; color: #555; }
         "
 
