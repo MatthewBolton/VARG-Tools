@@ -112,6 +112,20 @@ jobs:
           }
           Write-Output 'processing_plotly_renderers_ok'
 
+          $tasScript = Join-Path $bundle.FullName 'app\tests\scripts\test_tas_overlay.R'
+          $tas = & $rscript $tasScript 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($tas -join "`n") -notmatch 'tas_overlay_ok') {
+            throw "Embedded-R TAS overlay smoke failed:`n$($tas -join "`n")"
+          }
+          Write-Output 'tas_overlay_ok'
+
+          $fixtureScript = Join-Path $bundle.FullName 'app\tests\scripts\test_ap97_fixture_preprocessing.R'
+          $fixture = & $rscript $fixtureScript (Join-Path $bundle.FullName 'app') 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($fixture -join "`n") -notmatch 'ap97_fixture_preprocessing_ok missing_MnO=171 zero_TiO2=1') {
+            throw "Embedded-R AP97 fixture smoke failed:`n$($fixture -join "`n")"
+          }
+          Write-Output 'ap97_fixture_preprocessing_ok missing_MnO=171 zero_TiO2=1'
+
           $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port

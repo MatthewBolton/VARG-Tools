@@ -11,6 +11,7 @@ dplyr
 DT
 foreach
 future
+geochem
 ggdensity
 ggplot2
 ggrepel
