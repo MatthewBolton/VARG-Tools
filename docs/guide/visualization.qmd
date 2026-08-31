@@ -69,11 +69,11 @@ Select **Apply Warping Model**, then inspect three things:
 
 - **Warped Alignment:** do features align without implausible compression or expansion?
 - **Warp Fit:** is the mapping monotonic and geologically plausible between and beyond ties?
-- **Anchor Check:** does the fitted mapping reproduce every active tie to numerical precision, as an exact-anchor model should?
+- **Tie Diagnostics:** when each tie is omitted in turn, how far is it from the position predicted by the remaining ties?
 
 The warp is an exact-anchor, monotonic, piecewise-linear mapping through every active tie. It interpolates linearly between adjacent ties and extends the nearest tied slope beyond the outer ties. The extrapolated ends therefore carry more structural uncertainty than the tied interval.
 
-Because the mapping passes exactly through every active tie, anchor residuals should be zero apart from numerical precision. They verify implementation, not tie quality. Judge the consequences of the chosen ties from interval slopes, compression or expansion, feature alignment, extrapolation, and sensitivity to disabling uncertain ties. Verify each link with detailed geochemistry, stratigraphic order, independent ages, and site context.
+Leave-one-out residuals identify ties that exert stronger local leverage on the alignment. They are reported in reference-axis units and do not, by themselves, show that a correlation is wrong. Predictions for the first and last ties use extrapolation and are less constrained than predictions for interior ties. Evaluate these diagnostics together with interval slopes, compression or expansion, feature alignment, detailed geochemistry, stratigraphic order, independent ages, and site context.
 
 ### Export
 

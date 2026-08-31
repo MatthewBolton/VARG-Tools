@@ -126,6 +126,13 @@ jobs:
           }
           Write-Output 'ap97_fixture_preprocessing_ok missing_MnO=171 zero_TiO2=1'
 
+          $looScript = Join-Path $bundle.FullName 'app\tests\scripts\test_stratigraphic_loo.R'
+          $loo = & $rscript $looScript (Join-Path $bundle.FullName 'app') 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($loo -join "`n") -notmatch 'stratigraphic_loo_ok') {
+            throw "Embedded-R stratigraphic LOO smoke failed:`n$($loo -join "`n")"
+          }
+          Write-Output 'stratigraphic_loo_ok'
+
           $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port

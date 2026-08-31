@@ -22,7 +22,7 @@
 ## Deployment & Installation
 
 ### Online (Recommended)
-VARG-Tools is available through the project portal at <https://matthewbolton.github.io/VARG_Tools/>. The portal links to the hosted review application and current access information.
+VARG-Tools is available through the project portal at <https://matthewbolton.github.io/VARG_Tools/>. The portal links to the public hosted application, documentation, and current access information.
 
 ### Local Distributions
 Versioned local downloads are distributed through the project portal and the [GitHub releases page](https://github.com/MatthewBolton/VARG-Tools/releases).

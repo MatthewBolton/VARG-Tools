@@ -477,11 +477,14 @@ sc_validate_tiepoints <- function(tiepoints, ref_direction = "down",
 #'   range: "linear" continues the selected model (the nearest tied interval
 #'   for monotonic piecewise warping or the fitted slope for least-squares
 #'   warping), "error" stops, and "na" returns NA
+#' @param calculate_loo Whether to calculate leave-one-out tie diagnostics.
+#'   Internal recursive fits disable this option.
 #' @return List with warp_func (function), model_type, model_object, and diagnostics
 sc_calculate_warp <- function(tiepoints, method = "auto",
                               ref_direction = NULL,
                               target_direction = NULL,
-                              extrapolation = c("linear", "error", "na")) {
+                              extrapolation = c("linear", "error", "na"),
+                              calculate_loo = TRUE) {
     # Filter to valid tie points
     valid_ties <- tiepoints[
         !is.na(tiepoints$use_in_warp) & tiepoints$use_in_warp &
@@ -716,20 +719,93 @@ sc_calculate_warp <- function(tiepoints, method = "auto",
         class(model_obj) <- c("stratigraphic_monotonic_warp", "list")
     }
 
-    # Calculate diagnostics
-    valid_ties$pred_z <- warp_func(valid_ties$target_z)
-    valid_ties$residual <- valid_ties$ref_z - valid_ties$pred_z
+    # Exact-anchor differences verify implementation but cannot diagnose tie
+    # quality because the monotonic mapping passes through every active knot.
+    anchor_residuals <- valid_ties
+    anchor_residuals$pred_z <- warp_func(anchor_residuals$target_z)
+    anchor_residuals$residual <- anchor_residuals$ref_z - anchor_residuals$pred_z
+    anchor_rmse <- sqrt(mean(anchor_residuals$residual^2))
+    anchor_mae <- mean(abs(anchor_residuals$residual))
 
-    rmse <- sqrt(mean(valid_ties$residual^2))
-    mae <- mean(abs(valid_ties$residual))
+    # Diagnose tie leverage by omitting each tie in turn, refitting the same
+    # model to the remaining ties, and predicting the omitted reference
+    # coordinate. Endpoint omissions require nearest-segment extrapolation and
+    # are identified explicitly so they are not interpreted like interior ties.
+    loo_residuals <- valid_ties[, c(
+        "id", "ref_sample", "target_sample", "ref_z", "target_z"
+    )]
+    loo_residuals$pred_z <- NA_real_
+    loo_residuals$residual <- NA_real_
+    loo_residuals$prediction_type <- NA_character_
+    loo_residuals$status <- "Not estimable: at least three active ties are required"
+
+    if (isTRUE(calculate_loo) && nrow(valid_ties) >= 3) {
+        for (i in seq_len(nrow(valid_ties))) {
+            remaining_ties <- valid_ties[-i, , drop = FALSE]
+            omitted_target <- valid_ties$target_z[[i]]
+            remaining_range <- range(remaining_ties$target_z)
+            is_endpoint <- omitted_target < remaining_range[[1]] ||
+                omitted_target > remaining_range[[2]]
+
+            prediction <- tryCatch(
+                {
+                    loo_fit <- sc_calculate_warp(
+                        remaining_ties,
+                        method = use_method,
+                        ref_direction = ref_direction,
+                        target_direction = target_direction,
+                        extrapolation = "linear",
+                        calculate_loo = FALSE
+                    )
+                    as.numeric(loo_fit$warp_func(omitted_target))[[1]]
+                },
+                error = function(e) structure(NA_real_, error_message = e$message)
+            )
+
+            loo_residuals$prediction_type[[i]] <- if (is_endpoint) {
+                "Endpoint extrapolation"
+            } else {
+                "Interior interpolation"
+            }
+            if (is.finite(prediction)) {
+                loo_residuals$pred_z[[i]] <- prediction
+                loo_residuals$residual[[i]] <- valid_ties$ref_z[[i]] - prediction
+                loo_residuals$status[[i]] <- "Estimated"
+            } else {
+                error_message <- attr(prediction, "error_message")
+                loo_residuals$status[[i]] <- if (is.null(error_message)) {
+                    "Not estimable"
+                } else {
+                    paste("Not estimable:", error_message)
+                }
+            }
+        }
+    }
+
+    finite_loo <- is.finite(loo_residuals$residual)
+    loo_rmse <- if (any(finite_loo)) {
+        sqrt(mean(loo_residuals$residual[finite_loo]^2))
+    } else {
+        NA_real_
+    }
+    loo_mae <- if (any(finite_loo)) {
+        mean(abs(loo_residuals$residual[finite_loo]))
+    } else {
+        NA_real_
+    }
 
     list(
         warp_func = warp_func,
         model_type = model_type,
         model_object = model_obj,
         diagnostics = list(
-            rmse = rmse,
-            mae = mae,
+            diagnostic_type = "leave-one-out",
+            rmse = loo_rmse,
+            mae = loo_mae,
+            loo_rmse = loo_rmse,
+            loo_mae = loo_mae,
+            anchor_rmse = anchor_rmse,
+            anchor_mae = anchor_mae,
             n_points = n_points,
             target_range = if (exists("target_range")) {
                 unname(target_range)
@@ -737,7 +813,9 @@ sc_calculate_warp <- function(tiepoints, method = "auto",
                 unname(range(valid_ties$target_z))
             },
             extrapolation = extrapolation,
-            residuals = valid_ties[, c(
+            residuals = loo_residuals,
+            loo_residuals = loo_residuals,
+            anchor_residuals = anchor_residuals[, c(
                 "id", "ref_sample", "target_sample",
                 "ref_z", "target_z", "pred_z", "residual"
             )]
@@ -795,8 +873,12 @@ print.stratigraphic_warp <- function(x, ...) {
     cat("Target Core:", x$metadata$target_core, "\n")
     cat("Model Type:", x$model_type, "\n")
     cat("Tie Points:", nrow(x$tiepoints), "\n")
-    cat("RMSE:", round(x$diagnostics$rmse, 4), "\n")
-    cat("MAE:", round(x$diagnostics$mae, 4), "\n")
+    if (is.finite(x$diagnostics$loo_rmse)) {
+        cat("Leave-one-out RMSE:", round(x$diagnostics$loo_rmse, 4), "\n")
+        cat("Leave-one-out MAE:", round(x$diagnostics$loo_mae, 4), "\n")
+    } else {
+        cat("Leave-one-out diagnostics: not estimable\n")
+    }
     cat("Created:", format(x$metadata$created, "%Y-%m-%d %H:%M:%S"), "\n")
 }
 
@@ -811,8 +893,13 @@ sc_to_json <- function(obj) {
         model_type = obj$model_type,
         tiepoints = obj$tiepoints[, c("ref_sample", "ref_z", "target_sample", "target_z")],
         diagnostics = list(
+            diagnostic_type = obj$diagnostics$diagnostic_type,
             rmse = obj$diagnostics$rmse,
             mae = obj$diagnostics$mae,
+            loo_rmse = obj$diagnostics$loo_rmse,
+            loo_mae = obj$diagnostics$loo_mae,
+            anchor_rmse = obj$diagnostics$anchor_rmse,
+            anchor_mae = obj$diagnostics$anchor_mae,
             n_points = obj$diagnostics$n_points
         ),
         created = format(obj$metadata$created, "%Y-%m-%d %H:%M:%S")
@@ -1477,7 +1564,10 @@ sc_plot_warped <- function(data, warped_data, mappings, ref_core, target_core,
 sc_plot_fit <- function(warp_result) {
     library(plotly)
 
-    residuals <- warp_result$diagnostics$residuals
+    residuals <- warp_result$diagnostics$anchor_residuals
+    if (is.null(residuals)) {
+        residuals <- warp_result$diagnostics$residuals
+    }
 
     # Generate smooth prediction line
     z_range <- range(residuals$target_z)
@@ -1511,8 +1601,8 @@ sc_plot_fit <- function(warp_result) {
             "Target: ", target_sample, "<br>",
             "Target Z: ", round(target_z, 2), "<br>",
             "Reference Z: ", round(ref_z, 2), "<br>",
-            "Predicted Z: ", round(pred_z, 2), "<br>",
-            "Residual: ", round(residual, 4)
+            "Mapped Z: ", round(pred_z, 2), "<br>",
+            "Anchor difference: ", round(residual, 4)
         ),
         hovertemplate = "%{text}<extra></extra>"
     )

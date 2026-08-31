@@ -971,14 +971,14 @@ mod_visualization_ui <- function(id) {
                 plotlyOutput(ns("sc_warpFitPlot"), height = "75vh")
               ),
               bslib::nav_panel(
-                "Anchor Check",
+                "Tie Diagnostics",
                 div(
                   class = "p-3",
-                  h5(icon("check-double"), " Exact-anchor Verification"),
-                  p(class = "text-muted small", "The mapping passes exactly through every active tie, so these residuals should be zero apart from numerical precision. This verifies the fitted anchors; it does not test whether a tie is geologically correct."),
+                  h5(icon("magnifying-glass-chart"), " Leave-one-out Tie Diagnostics"),
+                  p(class = "text-muted small", "Each active tie is omitted in turn and predicted from a warp fitted to the remaining ties. Larger absolute residuals identify ties that exert stronger local leverage; they do not by themselves prove that a geological correlation is wrong. Endpoint estimates rely on extrapolation and should be interpreted more cautiously."),
                   plotlyOutput(ns("sc_residualPlot"), height = "40vh"),
                   tags$hr(),
-                  h6("Anchor Details:"),
+                  h6("Diagnostic Details:"),
                   tableOutput(ns("sc_residualTable"))
                 )
               )
@@ -4813,40 +4813,64 @@ mod_visualization_server <- function(id, processed_data = NULL, global_rv = NULL
     })
     output$sc_rmseOutput <- renderText({
       req(rv$sc_warp_result)
-      paste("Anchor RMSE (verification only):", round(rv$sc_warp_result$diagnostics$rmse, 4))
+      loo_rmse <- rv$sc_warp_result$diagnostics$loo_rmse
+      if (is.finite(loo_rmse)) {
+        paste("Leave-one-out RMSE (reference-axis units):", round(loo_rmse, 4))
+      } else {
+        "Leave-one-out diagnostics require at least three active ties."
+      }
     })
     
-    # Exact-anchor verification plot
+    # Leave-one-out diagnostic plot
     output$sc_residualPlot <- renderPlotly({
       req(rv$sc_warp_result, rv$sc_warp_result$diagnostics$residuals)
       resid_df <- rv$sc_warp_result$diagnostics$residuals
-      
-      # Exact-knot residuals should be zero apart from numerical precision.
+
+      estimable <- resid_df[is.finite(resid_df$residual), , drop = FALSE]
+      if (nrow(estimable) == 0) {
+        return(
+          plot_ly() %>%
+            layout(
+              title = "Leave-one-out Tie Diagnostics",
+              xaxis = list(visible = FALSE),
+              yaxis = list(visible = FALSE),
+              annotations = list(list(
+                x = 0.5, y = 0.5, xref = "paper", yref = "paper",
+                text = "At least three active ties are required.",
+                showarrow = FALSE
+              ))
+            )
+        )
+      }
+
+      bar_colors <- ifelse(
+        estimable$prediction_type == "Endpoint extrapolation",
+        "#6c757d", "#2a9d8f"
+      )
       plot_ly(
-        data = resid_df,
+        data = estimable,
         x = ~id,
         y = ~residual,
         type = "bar",
-        marker = list(color = "#3498db"),
-        text = ~paste0("TP", id, ": ", ref_sample, " ↔ ", target_sample, 
-                       "<br>Residual: ", round(residual, 3)),
+        marker = list(color = bar_colors),
+        text = ~paste0(
+          "TP", id, ": ", ref_sample, " ↔ ", target_sample,
+          "<br>", prediction_type,
+          "<br>Observed reference Z: ", round(ref_z, 3),
+          "<br>LOO predicted Z: ", round(pred_z, 3),
+          "<br>LOO residual: ", round(residual, 3)
+        ),
         hoverinfo = "text"
       ) %>%
         layout(
-          title = "Exact-anchor Verification",
+          title = "Leave-one-out Tie Diagnostics",
           xaxis = list(title = "Tie Point ID", dtick = 1),
-          yaxis = list(title = "Reference Z - mapped anchor Z"),
-          annotations = list(
-            list(
-              x = 0.5, y = 1.08, xref = "paper", yref = "paper",
-              text = "Non-zero values indicate numerical or implementation error, not a weak geological tie.",
-              showarrow = FALSE, font = list(size = 11, color = "#5f6368")
-            )
-          )
+          yaxis = list(title = "Observed reference Z - LOO prediction", zeroline = TRUE),
+          showlegend = FALSE
         )
     })
     
-    # Exact-anchor verification table
+    # Leave-one-out diagnostic table
     output$sc_residualTable <- renderTable({
       req(rv$sc_warp_result, rv$sc_warp_result$diagnostics$residuals)
       resid_df <- rv$sc_warp_result$diagnostics$residuals
@@ -4858,8 +4882,10 @@ mod_visualization_server <- function(id, processed_data = NULL, global_rv = NULL
         `Target Sample` = resid_df$target_sample,
         `Ref Z` = round(resid_df$ref_z, 3),
         `Target Z` = round(resid_df$target_z, 3),
-        `Predicted Z` = round(resid_df$pred_z, 3),
-        `Anchor Residual` = signif(resid_df$residual, 6),
+        `LOO Predicted Z` = round(resid_df$pred_z, 3),
+        `LOO Residual` = signif(resid_df$residual, 6),
+        `Prediction` = resid_df$prediction_type,
+        `Status` = resid_df$status,
         check.names = FALSE
       )
       display_df

@@ -952,7 +952,7 @@ ui <- bslib::page_sidebar(
             " icons throughout the app for contextual explanations of each feature."),
           tags$hr(),
           h5(icon("comment-dots"), " Feedback Welcome"),
-          p("Manuscript reviewers and trusted testers are welcome to explore VARG-Tools. Please share feedback through the 'Feedback' tab."),
+          p("Researchers and other users are welcome to explore VARG-Tools. Please report problems or suggestions through the 'Feedback' tab."),
           tags$hr(),
           if (is_hosted_deployment) {
             tagList(
